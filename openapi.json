@@ -1,0 +1,16 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "MedStep Engine API", "version": "1.0.0" },
+  "servers": [ { "url": "RENDER_URL_AQUI" } ],
+  "paths": {
+    "/analyze-nbme": {
+      "post": { "operationId": "analyzeNbme", "summary": "Analyze NBME exam", "responses": { "200": {} } }
+    },
+    "/generate-plan": {
+      "post": { "operationId": "generatePlan", "summary": "Generate 30-day plan", "responses": { "200": {} } }
+    },
+    "/save-state": {
+      "post": { "operationId": "saveState", "summary": "Save state", "responses": { "200": {} } }
+    }
+  }
+}
