@@ -1,15 +1,24 @@
-// ✅ Secure Save-State Endpoint using Service Role Key
+// ✅ Secure Save-State Endpoint with Authorization and Supabase Service Role Key
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Inicializa Supabase usando la Service Role Key (clave permanente del backend)
+// 🔐 Initialize Supabase (backend-only service key)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!; // 👈 clave segura del backend
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(req: NextRequest) {
+  // ✅ Authorization check
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.split(" ")[1];
+  const secret = process.env.ACTIONS_SECRET;
+
+  if (!token || token !== secret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    // ✅ Leer el cuerpo de la solicitud
+    // 🧾 Parse body
     const body = await req.json();
     const { student_id, nbme_input, plan_output, fatigue_level } = body;
 
@@ -17,7 +26,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 🧠 Insertar o actualizar progreso en Supabase
+    // 💾 Upsert progress into Supabase
     const { data, error } = await supabase
       .from("progress_state")
       .upsert([
@@ -31,14 +40,13 @@ export async function POST(req: NextRequest) {
       ])
       .select();
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-    return NextResponse.json({ success: true, data }, { status: 200 });
+    return NextResponse.json({ success: true, message: "state saved", data });
   } catch (err: any) {
-    console.error("Error in save-state:", err);
-    return NextResponse.json(
-      { error: err.message || "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }
 }
+
