@@ -3,7 +3,7 @@
   "routes": [
     {
       "src": "^/api/save-state$",
-      "dest": "/api/save-state.ts"
+      "dest": "/api/save-state"
     },
     {
       "src": "^/api/(.*)$",
