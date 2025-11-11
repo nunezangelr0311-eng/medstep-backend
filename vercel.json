@@ -2,13 +2,12 @@
   "version": 2,
   "routes": [
     {
-      "src": "/api/save-state",
-      "dest": "/api/save-state"
+      "src": "^/api/save-state$",
+      "dest": "/api/save-state.ts"
     },
     {
-      "src": "/api/(.*)",
+      "src": "^/api/(.*)$",
       "dest": "/api/index.js"
     }
   ]
 }
-
