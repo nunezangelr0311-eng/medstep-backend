@@ -1,37 +1,55 @@
-// ✅ Save-State endpoint para Vercel (Node) + Supabase + ACTIONS_SECRET
-
+// ✅ MedStep Save-State endpoint
+// Compatible con Vercel Serverless (Node), Supabase y ACTIONS_SECRET
 import { createClient } from "@supabase/supabase-js";
 
-// 🔗 Configuración de Supabase con Service Role Key (solo backend)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-// Handler principal (formato Vercel Node)
 export default async function handler(req: any, res: any) {
-  // Solo permitimos POST
+  // 🌐 CORS básico (válido para Hoppscotch, frontend, etc.)
+  res.setHeader("Access-Control-Allow-Origin", "*"); // luego puedes limitar a tu dominio
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  // Solo POST permitido
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // 🔐 Autorización con ACTIONS_SECRET
-  const authHeader =
-    req.headers.authorization || req.headers.Authorization || "";
-  const token = String(authHeader).replace("Bearer ", "").trim();
-  const secret = process.env.ACTIONS_SECRET || "";
-
-  console.log("🔹 Token recibido:", token);
-  console.log("🔹 Secreto cargado:", secret ? "OK" : "undefined");
-
-  if (!token || token !== secret) {
-    console.warn("🚫 Token inválido o ausente");
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
   try {
-    // 📥 Leer body (Hoppscotch envía JSON)
+    // 🔐 Variables necesarias
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const secret = process.env.ACTIONS_SECRET;
+
+    if (!supabaseUrl || !supabaseServiceKey || !secret) {
+      console.error("Missing env vars", {
+        hasUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey,
+        hasSecret: !!secret,
+      });
+      return res
+        .status(500)
+        .json({ error: "Server misconfigured: missing environment variables" });
+    }
+
+    // 🔐 Autorización Bearer
+    const rawAuth =
+      (req.headers.authorization as string) ||
+      (req.headers.Authorization as string) ||
+      "";
+    const token = rawAuth.replace(/^Bearer\s+/i, "").trim();
+
+    if (!token || token !== secret) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // 📥 Body JSON
     const body =
-      typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+      typeof req.body === "string"
+        ? JSON.parse(req.body || "{}")
+        : (req.body || {});
 
     const { student_id, nbme_input, plan_output, fatigue_level } = body;
 
@@ -41,7 +59,10 @@ export default async function handler(req: any, res: any) {
         .json({ error: "Missing required fields" });
     }
 
-    // 💾 Guardar / actualizar en Supabase
+    // 🔗 Supabase client (solo aquí, después de validar env)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // 💾 Guardar / actualizar progreso
     const { data, error } = await supabase
       .from("progress_state")
       .upsert([
@@ -56,20 +77,19 @@ export default async function handler(req: any, res: any) {
       .select();
 
     if (error) {
-      console.error("❌ Error Supabase:", error);
+      console.error("Supabase error:", error);
       return res.status(500).json({ error: error.message });
     }
 
-    console.log("✅ Registro insertado:", data);
     return res.status(200).json({
       success: true,
       message: "state saved",
       data,
     });
   } catch (err: any) {
-    console.error("❌ Error general:", err);
+    console.error("Handler error:", err);
     return res
       .status(500)
-      .json({ error: err.message || "Internal Server Error" });
+      .json({ error: err?.message || "Internal Server Error" });
   }
 }
