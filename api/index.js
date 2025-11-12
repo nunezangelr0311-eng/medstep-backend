@@ -1,8 +1,7 @@
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
-    // Confirmar que el endpoint funciona
-    const response = {
-      status: "✅ MedStep Backend is LIVE (Node Runtime)",
+    const data = {
+      status: "✅ MedStep Backend is LIVE",
       message: "API is ready to receive requests from Step 1 Booster.",
       available_endpoints: [
         "/api/generate-plan",
@@ -10,18 +9,16 @@ export default async function handler(req, res) {
         "/api/save-state",
         "/api/get-progress"
       ],
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
-    // Responder correctamente
     res.setHeader("Content-Type", "application/json");
-    res.status(200).json(response);
+    res.status(200).json(data);
   } catch (error) {
-    console.error("❌ Error in /api/index.js:", error);
+    console.error("❌ Error in index.js:", error);
     res.status(500).json({
       status: "❌ INTERNAL_SERVER_ERROR",
-      message: error.message || "Unknown error occurred in index.js",
+      message: error.message || "Unknown error occurred",
     });
   }
-}
-
+};
