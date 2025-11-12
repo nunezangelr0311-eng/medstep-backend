@@ -8,8 +8,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       message: "❌ Error in test.js",
       details: error.message
-      // health check OK
-
     });
   }
 }
+
