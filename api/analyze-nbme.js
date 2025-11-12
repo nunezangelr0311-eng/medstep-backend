@@ -1,120 +1,120 @@
-const OpenAI = require("openai");
+// api/analyze-nbme.js
+// MedStep Engine™ – Analyze NBME (tone-tuned)
+// Requisitos en Vercel:
+// - OPENAI_API_KEY (secreto)
+// - ACTIONS_SECRET (token Bearer que usas desde WordPress)
+// Endpoint: POST /api/analyze-nbme  { email, nbme_text }
+
+const OpenAI = require('openai');
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-module.exports = async function handler(req, res) {
+// Utilidad segura
+function j(res, code, payload) {
+  res.statusCode = code;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify(payload));
+}
+
+module.exports = async (req, res) => {
   try {
-    // 🔹 MODO DEBUG POR GET (para que puedas probar desde el navegador)
-    // URL de ejemplo:
-    // https://medstep-backend.vercel.app/api/analyze-nbme?debug=1&token=MedStep2025SecureToken&email=test@exammentorai.com&nbme=Cardio+52,+Endo+48,+Renal+61
-    if (req.method === "GET") {
-      const { debug, token, email, nbme } = req.query || {};
-
-      if (debug === "1") {
-        if (!token || token !== (process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET)) {
-          return res.status(401).json({ error: "Unauthorized (debug)" });
-        }
-
-        if (!email || !nbme) {
-          return res.status(400).json({ error: "Missing parameters (debug)" });
-        }
-
-        if (!process.env.OPENAI_API_KEY) {
-          return res.status(500).json({ error: "Missing OpenAI API key" });
-        }
-
-        const prompt = `
-You are MedStep Engine, an AI that analyzes NBME performance data for USMLE Step 1.
-
-NBME data: ${nbme}
-
-1) Identify weak vs strong systems.
-2) Give 1–2 priority focus areas for the next study cycle.
-3) Keep it concise, clinical and actionable.
-`;
-
-        const completion = await client.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: "You are MedStep Engine." },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.6,
-          max_tokens: 300
-        });
-
-        const text =
-          completion?.choices?.[0]?.message?.content || "No response generated.";
-
-        return res.status(200).json({
-          mode: "debug-get",
-          email,
-          result: text,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Si no viene en modo debug, responde normal
-      return res.status(405).json({ error: "Method not allowed" });
+    if (req.method !== 'POST') {
+      j(res, 405, { error: 'Method not allowed' });
+      return;
     }
 
-    // 🔹 MODO REAL (POST desde WordPress o cliente)
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+    // Autorización tipo Bearer desde WP (no exponer en frontend)
+    const auth = req.headers.authorization || '';
+    const token = auth.replace(/^Bearer\s+/i, '');
+    if (!token || token !== process.env.ACTIONS_SECRET) {
+      j(res, 401, { error: 'Unauthorized' });
+      return;
     }
 
-    const auth = req.headers.authorization || "";
-    const token = auth.replace("Bearer ", "").trim();
-    const valid = process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET;
-
-    if (!token || !valid || token !== valid) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { email, nbme_text } = req.body || {};
+    const { email, nbme_text } = safeBody(req);
     if (!email || !nbme_text) {
-      return res.status(400).json({ error: "Missing parameters" });
+      j(res, 400, { error: 'Missing parameters' });
+      return;
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OpenAI API key" });
-    }
+    // ---------- PROMPT AFINADO (TONO: attending exigente pero constructivo) ----------
+    const systemPrompt = `
+Eres un attending de USMLE Step 1 riguroso pero constructivo. Tu estilo:
+- Preciso, clínico, directo; cero relleno y cero motivación vacía.
+- Enfocado en decisiones y próximos pasos concretos por sistema.
+- Prioriza fisiología clave, integración clínica y farmacología esencial.
+- NO uses la frase "plan de 30 días" ni menciones "mensualidad" o suscripciones.
+- Evita recomendaciones vagas; cada punto debe ser verificable/accionable.
+- Mantén todo en español, salvo términos estándar (e.g., enzyme names, receptor names).
 
-    const prompt = `
-You are MedStep Engine, an AI that analyzes NBME performance data for USMLE Step 1.
+PARÁMETROS DE ENTRADA (NBME_TEXT): puntuaciones por sistema (e.g., "Cardio 52, Endo 48, Renal 61...").
+OBJETIVO: transformar esas puntuaciones en un ciclo de mejora de alto rendimiento.
 
-NBME data: ${nbme_text}
+FORMATO SALIDA (estrictamente este, para render limpio en WP):
+1) **Weak vs Strong Systems:**
+   - **Weak Systems:** <lista con nombres y puntajes ascendentes>
+   - **Strong Systems:** <lista con nombres y puntajes descendentes>
 
-1) Identify weak vs strong systems.
-2) Give 1–2 priority focus areas for the next study cycle.
-3) Keep it concise, clinical and actionable.
-`;
+2) **Priority Focus Areas for Next Study Cycle:**
+   - **<Sistema débil #1>:** 2–3 bullets de foco con temas específicos de alta ganancia (no teorías genéricas).
+   - **<Sistema débil #2>:** idem…
+   (hasta 2–3 sistemas, máximo 6 bullets totales)
 
+3) **Core Drills (15–20 min):**
+   - 3 tareas concretas de práctica activa y revisión espaciada (formato breve: acción + recurso/tema exacto).
+
+4) **Red Flags to Fix Before Next NBME:**
+   - 2–4 errores de concepto críticos que el estudiante suele cometer con esos puntajes y cómo corregirlos.
+
+REGLAS:
+- No escribas planes por días-semanas; habla por “ciclo” y por “bloques”.
+- No repitas la entrada; no digas que eres IA; no menciones políticas.
+- Mantén listas limpias con guiones o bullets; usa negritas solo como en el formato.
+- Sé conciso: máximo ~200–260 palabras.
+`.trim();
+
+    const userPrompt = `
+NBME_TEXT:
+${nbme_text}
+
+Estudiante: ${email}
+`.trim();
+
+    // Hyperparams: tono sobrio, estable, accionable
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: 'gpt-5',
+      temperature: 0.3,
+      top_p: 0.85,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.2,
       messages: [
-        { role: "system", content: "You are MedStep Engine." },
-        { role: "user", content: prompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
       ],
-      temperature: 0.6,
-      max_tokens: 300
     });
 
-    const text =
-      completion?.choices?.[0]?.message?.content || "No response generated.";
+    const content = (completion.choices?.[0]?.message?.content || '').trim();
 
-    return res.status(200).json({
+    // Respuesta estándar esperada por el plugin WP
+    j(res, 200, {
       email,
-      result: text,
-      timestamp: new Date().toISOString()
+      result: content,
+      timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Analyze-nbme error:", err);
-    return res.status(500).json({
-      error: "Internal Server Error",
-      message: err.message
-    });
+    console.error('analyze-nbme error:', err?.message || err);
+    j(res, 500, { error: 'INTERNAL', detail: String(err?.message || err) });
   }
 };
+
+function safeBody(req) {
+  try {
+    if (!req.body) return {};
+    if (typeof req.body === 'string') return JSON.parse(req.body);
+    return req.body;
+  } catch {
+    return {};
+  }
+}
