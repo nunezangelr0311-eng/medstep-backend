@@ -1,8 +1,8 @@
 // api/analyze-nbme.js
-// MedStep Engine™ – Analyze NBME (tone-tuned)
+// MedStep Engine™ – Analyze NBME (tone-tuned, sin temperature)
 // Requisitos en Vercel:
-// - OPENAI_API_KEY (secreto)
-// - ACTIONS_SECRET (token Bearer que usas desde WordPress)
+// - OPENAI_API_KEY
+// - ACTIONS_SECRET
 // Endpoint: POST /api/analyze-nbme  { email, nbme_text }
 
 const OpenAI = require('openai');
@@ -11,7 +11,6 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Utilidad segura
 function j(res, code, payload) {
   res.statusCode = code;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -25,7 +24,6 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // Autorización tipo Bearer desde WP (no exponer en frontend)
     const auth = req.headers.authorization || '';
     const token = auth.replace(/^Bearer\s+/i, '');
     if (!token || token !== process.env.ACTIONS_SECRET) {
@@ -39,7 +37,6 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // ---------- PROMPT AFINADO (TONO: attending exigente pero constructivo) ----------
     const systemPrompt = `
 Eres un attending de USMLE Step 1 riguroso pero constructivo. Tu estilo:
 - Preciso, clínico, directo; cero relleno y cero motivación vacía.
@@ -47,48 +44,38 @@ Eres un attending de USMLE Step 1 riguroso pero constructivo. Tu estilo:
 - Prioriza fisiología clave, integración clínica y farmacología esencial.
 - NO uses la frase "plan de 30 días" ni menciones "mensualidad" o suscripciones.
 - Evita recomendaciones vagas; cada punto debe ser verificable/accionable.
-- Mantén todo en español, salvo términos estándar (e.g., enzyme names, receptor names).
+- Mantén todo en español, salvo términos estándar (enzyme/receptor names).
 
 PARÁMETROS DE ENTRADA (NBME_TEXT): puntuaciones por sistema (e.g., "Cardio 52, Endo 48, Renal 61...").
 OBJETIVO: transformar esas puntuaciones en un ciclo de mejora de alto rendimiento.
 
-FORMATO SALIDA (estrictamente este, para render limpio en WP):
+FORMATO SALIDA (estrictamente este):
 1) **Weak vs Strong Systems:**
    - **Weak Systems:** <lista con nombres y puntajes ascendentes>
    - **Strong Systems:** <lista con nombres y puntajes descendentes>
 
 2) **Priority Focus Areas for Next Study Cycle:**
-   - **<Sistema débil #1>:** 2–3 bullets de foco con temas específicos de alta ganancia (no teorías genéricas).
-   - **<Sistema débil #2>:** idem…
-   (hasta 2–3 sistemas, máximo 6 bullets totales)
+   - **<Sistema débil #1>:** 2–3 bullets específicos de alta ganancia.
+   - **<Sistema débil #2>:** idem… (máx. 6 bullets totales)
 
 3) **Core Drills (15–20 min):**
-   - 3 tareas concretas de práctica activa y revisión espaciada (formato breve: acción + recurso/tema exacto).
+   - 3 tareas concretas de práctica activa y revisión espaciada.
 
 4) **Red Flags to Fix Before Next NBME:**
-   - 2–4 errores de concepto críticos que el estudiante suele cometer con esos puntajes y cómo corregirlos.
+   - 2–4 errores de concepto críticos y cómo corregirlos.
 
 REGLAS:
-- No escribas planes por días-semanas; habla por “ciclo” y por “bloques”.
+- No planes por días/semanas; habla por “ciclo” y “bloques”.
 - No repitas la entrada; no digas que eres IA; no menciones políticas.
-- Mantén listas limpias con guiones o bullets; usa negritas solo como en el formato.
-- Sé conciso: máximo ~200–260 palabras.
+- Listas limpias; negritas solo como en el formato.
+- Sé conciso: ~200–260 palabras.
 `.trim();
 
-    const userPrompt = `
-NBME_TEXT:
-${nbme_text}
+    const userPrompt = `NBME_TEXT:\n${nbme_text}\n\nEstudiante: ${email}`.trim();
 
-Estudiante: ${email}
-`.trim();
-
-    // Hyperparams: tono sobrio, estable, accionable
+    // ❗ Sin temperature/top_p/penalties para evitar el 400 del modelo.
     const completion = await client.chat.completions.create({
       model: 'gpt-5',
-      temperature: 0.3,
-      top_p: 0.85,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.2,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -97,7 +84,6 @@ Estudiante: ${email}
 
     const content = (completion.choices?.[0]?.message?.content || '').trim();
 
-    // Respuesta estándar esperada por el plugin WP
     j(res, 200, {
       email,
       result: content,
