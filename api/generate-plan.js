@@ -1,10 +1,11 @@
-export default async function handler(req, res) {
+// /api/generate-plan.js
+module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { email, nbme_text, weeks, hours_per_day, fatigue_level, resources } = req.body;
+    const { email, nbme_text, weeks, hours_per_day, fatigue_level, resources } = req.body || {};
 
     // Validar datos mínimos
     if (!email || !nbme_text) {
@@ -12,7 +13,6 @@ export default async function handler(req, res) {
     }
 
     // Simulación temporal (mock)
-    // Aquí normalmente se conecta al modelo o base de datos, pero por ahora devuelve un ejemplo
     const response = {
       plan_cycle: [
         {
@@ -50,4 +50,4 @@ export default async function handler(req, res) {
     console.error("Error generating plan:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
+};
