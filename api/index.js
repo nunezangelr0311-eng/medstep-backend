@@ -4,6 +4,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import serverless from "serverless-http";
 
 dotenv.config();
 
@@ -21,7 +22,7 @@ app.use((req, res, next) => {
 });
 
 // 📊 Endpoint 1: Análisis NBME
-app.post("/analyze-nbme", (req, res) => {
+app.post("/api/analyze-nbme", (req, res) => {
   return res.json({
     received: true,
     type: "nbme-analysis",
@@ -30,7 +31,7 @@ app.post("/analyze-nbme", (req, res) => {
 });
 
 // 🗓️ Endpoint 2: Generar plan de 30 días
-app.post("/generate-plan", (req, res) => {
+app.post("/api/generate-plan", (req, res) => {
   return res.json({
     plan_30_days: ["Day 1: Review weak systems", "Day 2: UWorld blocks"],
     checkpoints: {
@@ -41,21 +42,39 @@ app.post("/generate-plan", (req, res) => {
 });
 
 // 💾 Endpoint 3: Guardar estado
-app.post("/save-state", (req, res) => {
+app.post("/api/save-state", (req, res) => {
   return res.json({ saved: true, state: req.body });
 });
 
-// 🧩 Nuevo: endpoint de prueba para Vercel
-app.get("/ping", (req, res) => {
+// 🧩 Endpoint de prueba
+app.get("/api/ping", (req, res) => {
   res.json({ message: "✅ MedStep Engine backend is alive and running!" });
 });
 
 // 📂 Servir OpenAPI
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.get("/openapi.json", (req, res) => {
+
+app.get("/api/openapi.json", (req, res) => {
   res.sendFile(path.join(__dirname, "openapi.json"));
 });
 
-// 🚀 Exporta como función para Vercel
+// 🌐 Endpoint raíz informativo
+app.get("/", (req, res) => {
+  res.json({
+    status: "✅ MedStep Backend is LIVE",
+    message: "Serverless API ready to receive requests from Step 1 Booster",
+    available_endpoints: [
+      "/api/analyze-nbme",
+      "/api/generate-plan",
+      "/api/save-state",
+      "/api/ping",
+      "/api/openapi.json"
+    ],
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// 🚀 Exportar para Vercel
+export const handler = serverless(app);
 export default app;
