@@ -1,72 +1,128 @@
-// api/analyze-nbme.js
-const OpenAI = require('openai');
+// File: api/analyze-nbme.js
+// Runtime: Node.js 18+ on Vercel (Serverless Function)
+// Dependencies: "openai" en package.json
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+const OpenAI = require("openai");
+
+/** ---------- CONFIG ---------- */
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // o tu dominio
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
+// Usa un modelo estable; si no defines OPENAI_MODEL, usamos uno razonable.
+// Evitamos enviar 'temperature' porque algunos modelos lo rechazan.
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-module.exports = async (req, res) => {
-  cors(res);
+/** ---------- PROMPT DE TONO (attending exigente) ---------- */
+const systemPrompt = `
+You are an attending physician crafting performance feedback for a USMLE Step 1 candidate.
+Tone: demanding but supportive; concise, no fluff; clinically rigorous; board-style priorities.
 
-  // Preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+Output format in Markdown (strict):
+1) **Weak vs Strong Systems:** (one single compact line)
+2) **Priority Focus Areas for Next Study Cycle:** (2–4 bullets)
+   - Be specific: mechanisms, high-yield diseases, and critical pharmacology.
+3) **Clinical Pearls (x3):** (three single-line pearls, directly applicable)
+4) **Next Steps (x2):** (two concrete, actionable practice steps or resources)
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  try {
-    // Seguridad simple por token
-    const auth = req.headers.authorization || '';
-    const token = auth.split(' ')[1];
-    if (token !== process.env.ACTIONS_SECRET) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { email, nbme_text } = req.body || {};
-    if (!email || !nbme_text) {
-      return res.status(400).json({ error: 'Missing email or nbme_text' });
-    }
-
-    // Prompt “attending exigente”
-    const prompt = `
-You are a demanding but constructive USMLE Step 1 attending. Analyze the student's NBME string and produce a concise, high-yield feedback:
-- Classify systems: Weak (<=50), Moderate (51–59), Strong (>=60).
-- Give 2–3 **specific** subtopics per weak system (actionable, high-yield).
-- One **weekly focus plan** (bullets) and 1–2 “non-negotiables”.
-- Tone: direct, clinical, zero fluff. No 30-day plan wording.
-
-NBME: ${nbme_text}
-Output in Markdown only.
+Constraints:
+- Do not repeat the input.
+- Avoid generic statements. Be precise and exam-oriented.
+- Keep it tight, punchy, and actionable.
 `;
 
-    // Usa un modelo que no requiera temperature custom (por si acaso)
-    const resp = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      // No poner temperature/top_p si tu despliegue dio error con eso
+/** ---------- HELPERS ---------- */
+function bad(res, code, message) {
+  return res.status(code).json({ error: message });
+}
+
+function ok(res, payload) {
+  return res.status(200).json(payload);
+}
+
+/** ---------- HANDLER ---------- */
+module.exports = async (req, res) => {
+  try {
+    // CORS básico (opcional; útil cuando pruebas desde el navegador)
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return res.status(200).end();
+    }
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // Método
+    if (req.method !== "POST") {
+      return bad(res, 405, "Method not allowed");
+    }
+
+    // Auth
+    const expected = process.env.ACTIONS_SECRET;
+    const auth = req.headers.authorization || "";
+    if (!expected) {
+      return bad(res, 500, "Server misconfigured: ACTIONS_SECRET is missing");
+    }
+    if (!auth.startsWith("Bearer ")) {
+      return bad(res, 401, "Missing or invalid Authorization header");
+    }
+    const token = auth.slice("Bearer ".length).trim();
+    if (token !== expected) {
+      return bad(res, 401, "Unauthorized");
+    }
+
+    // Body
+    const { email, nbme_text } = req.body || {};
+    if (!email || typeof email !== "string") {
+      return bad(res, 400, "Invalid 'email'");
+    }
+    if (!nbme_text || typeof nbme_text !== "string") {
+      return bad(res, 400, "Invalid 'nbme_text'");
+    }
+
+    // Normaliza el texto NBME (quitas espacios raros y evitas prompts largos)
+    const nbmeLine = nbme_text.replace(/\s+/g, " ").trim();
+
+    // Llamada al modelo (SIN temperature, para evitar 'Unsupported value')
+    const completion = await client.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content:
+            `Student NBME line: ${nbmeLine}\n` +
+            `Return only the Markdown formatted as specified (strict).`,
+        },
+      ],
+      // IMPORTANTE: no enviar 'temperature' para modelos que no lo soportan
+      // temperature: 1, // <-- No lo enviamos
+      // top_p, frequency_penalty, presence_penalty tampoco son necesarios aquí
     });
 
-    const result = resp.choices?.[0]?.message?.content?.trim() || '';
+    const text =
+      completion?.choices?.[0]?.message?.content?.trim() ||
+      "No result generated.";
 
-    return res.status(200).json({
+    return ok(res, {
       email,
-      result,
-      timestamp: new Date().toISOString()
+      result: text,
+      timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error(err);
+    // Errores útiles
+    const detail =
+      (err && err.response && err.response.data) ||
+      err?.message ||
+      String(err);
+
+    // Log para Vercel
+    console.error("analyze-nbme error:", detail);
+
+    // Respuesta de error
     return res.status(500).json({
-      error: 'INTERNAL',
-      detail: err?.message || 'unknown'
+      error: "INTERNAL",
+      detail,
     });
   }
 };
