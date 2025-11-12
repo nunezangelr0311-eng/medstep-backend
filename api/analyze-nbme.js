@@ -1,66 +1,76 @@
 import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
 
-dotenv.config();
-
-// Inicializar OpenAI y Supabase
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-// Endpoint principal
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const { email, nbme_text } = req.body;
-
-  if (!email || !nbme_text) {
-    return res.status(400).json({ error: "Missing email or NBME text" });
-  }
-
   try {
-    // 1️⃣ Llamada a OpenAI
-    const completion = await openai.chat.completions.create({
+    // Verifica método
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // Seguridad del token
+    const authHeader = req.headers.authorization || "";
+    const providedToken = authHeader.replace("Bearer ", "").trim();
+    const validToken =
+      process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET;
+
+    if (!providedToken || providedToken !== validToken) {
+      console.error("❌ Token inválido o ausente");
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verifica que el JSON venga correcto
+    const { email, nbme_text } = req.body || {};
+    if (!email || !nbme_text) {
+      console.error("❌ Faltan parámetros en body:", req.body);
+      return res.status(400).json({
+        error: "Missing parameters",
+        required: ["email", "nbme_text"],
+      });
+    }
+
+    // Inicializa cliente OpenAI
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("❌ Falta OPENAI_API_KEY");
+      return res.status(500).json({ error: "Missing OpenAI API key" });
+    }
+
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    // Genera análisis simple
+    const prompt = `
+You are MedStep Engine, an AI NBME performance analyzer.
+Analyze the student's input and classify each system by strength level (Strong / Moderate / Weak),
+then suggest 1 adaptive focus area for next cycle.
+
+NBME Data: ${nbme_text}
+`;
+
+    const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content:
-            "You are MedStep Engine, an AI mentor that analyzes NBME Step 1 performance and creates adaptive 30-day recovery plans.",
-        },
-        {
-          role: "user",
-          content: `NBME results for ${email}: ${nbme_text}. 
-          Analyze each system (e.g., Cardio, Endo, Renal...) as Strong, Moderate, or Weak. 
-          Then generate a JSON response with the following keys: 
-          plan_30_days, daily_checkpoint, weekly_checkpoint, summary.`,
-        },
+        { role: "system", content: "You are MedStep Engine AI assistant." },
+        { role: "user", content: prompt },
       ],
       temperature: 0.7,
+      max_tokens: 300,
     });
 
-    const aiResponse = completion.choices[0].message.content;
+    const output = completion.choices?.[0]?.message?.content || "No output";
 
-    // 2️⃣ Guardar en Supabase (opcional)
-    await supabase
-      .from("progress_state")
-      .insert([{ email, nbme_text, ai_output: aiResponse }]);
+    console.log("✅ Analysis generated successfully for:", email);
 
-    // 3️⃣ Responder al cliente
     return res.status(200).json({
-      success: true,
-      plan: aiResponse,
+      email,
+      analysis: output,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(500).json({ error: error.message });
+    console.error("🔥 Internal Server Error:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      details: error.message,
+    });
   }
 }
