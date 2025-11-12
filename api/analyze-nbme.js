@@ -1,76 +1,72 @@
+// ✅ analyze-nbme.js — versión blindada contra FUNCTION_INVOCATION_FAILED
+
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
   try {
-    // Verifica método
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
-    // Seguridad del token
-    const authHeader = req.headers.authorization || "";
-    const providedToken = authHeader.replace("Bearer ", "").trim();
-    const validToken =
+    // 🔒 Token de seguridad
+    const auth = req.headers.authorization || "";
+    const token = auth.replace("Bearer ", "").trim();
+    const valid =
       process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET;
 
-    if (!providedToken || providedToken !== validToken) {
-      console.error("❌ Token inválido o ausente");
+    if (!token || token !== valid) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Verifica que el JSON venga correcto
+    // 🔎 Validar body
     const { email, nbme_text } = req.body || {};
     if (!email || !nbme_text) {
-      console.error("❌ Faltan parámetros en body:", req.body);
-      return res.status(400).json({
-        error: "Missing parameters",
-        required: ["email", "nbme_text"],
-      });
+      return res.status(400).json({ error: "Missing parameters" });
     }
 
-    // Inicializa cliente OpenAI
+    // ⚙️ Comprobar clave de OpenAI
     if (!process.env.OPENAI_API_KEY) {
-      console.error("❌ Falta OPENAI_API_KEY");
+      console.error("🚨 OPENAI_API_KEY no definida");
       return res.status(500).json({ error: "Missing OpenAI API key" });
     }
 
-    const client = new OpenAI({
+    // 🧠 Inicializar cliente OpenAI (forma compatible con Vercel runtime)
+    const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Genera análisis simple
+    // 🧩 Prompt
     const prompt = `
-You are MedStep Engine, an AI NBME performance analyzer.
-Analyze the student's input and classify each system by strength level (Strong / Moderate / Weak),
-then suggest 1 adaptive focus area for next cycle.
+You are MedStep Engine, an AI that analyzes NBME performance data and identifies focus areas.
 
-NBME Data: ${nbme_text}
+NBME data: ${nbme_text}
+Summarize weak and strong systems and suggest one priority focus for the next cycle.
 `;
 
-    const completion = await client.chat.completions.create({
+    // 🚀 Llamada segura
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are MedStep Engine AI assistant." },
+        { role: "system", content: "You are MedStep Engine." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.7,
+      temperature: 0.6,
       max_tokens: 300,
     });
 
-    const output = completion.choices?.[0]?.message?.content || "No output";
-
-    console.log("✅ Analysis generated successfully for:", email);
+    const text = completion.choices?.[0]?.message?.content || "No response generated.";
 
     return res.status(200).json({
       email,
-      analysis: output,
+      result: text,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    console.error("🔥 Internal Server Error:", error);
+  } catch (err) {
+    console.error("🔥 Error interno:", err);
     return res.status(500).json({
       error: "Internal Server Error",
-      details: error.message,
+      message: err.message,
+      stack: err.stack,
     });
   }
 }
