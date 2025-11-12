@@ -1,33 +1,27 @@
-export const config = {
-  runtime: "edge",
-};
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const data = {
-      status: "✅ MedStep Backend is LIVE (EDGE MODE)",
+    // Confirmar que el endpoint funciona
+    const response = {
+      status: "✅ MedStep Backend is LIVE (Node Runtime)",
       message: "API is ready to receive requests from Step 1 Booster.",
       available_endpoints: [
         "/api/generate-plan",
         "/api/analyze-nbme",
         "/api/save-state",
-        "/api/get-progress",
+        "/api/get-progress"
       ],
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     };
 
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    // Responder correctamente
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json(response);
   } catch (error) {
-    const err = {
+    console.error("❌ Error in /api/index.js:", error);
+    res.status(500).json({
       status: "❌ INTERNAL_SERVER_ERROR",
-      message: error.message || "Unknown error occurred",
-    };
-    return new Response(JSON.stringify(err), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+      message: error.message || "Unknown error occurred in index.js",
     });
   }
 }
+
