@@ -1,4 +1,5 @@
-import OpenAI from "openai";
+// Endpoint mínimo para probar que la función serverless funciona.
+// Sin OpenAI, sin imports, solo lógica básica.
 
 export default async function handler(req, res) {
   try {
@@ -6,59 +7,27 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
-    // Auth token
     const auth = req.headers.authorization || "";
     const token = auth.replace("Bearer ", "").trim();
-    const valid = process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET;
+    const valid =
+      process.env.MEDSTEP_API_TOKEN || process.env.ACTIONS_SECRET;
 
     if (!token || !valid || token !== valid) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Body
     const { email, nbme_text } = req.body || {};
     if (!email || !nbme_text) {
       return res.status(400).json({ error: "Missing parameters" });
     }
 
-    // OpenAI key
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY missing");
-      return res.status(500).json({ error: "Missing OpenAI API key" });
-    }
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const prompt = `
-You are MedStep Engine, an AI that analyzes NBME performance data for USMLE Step 1.
-
-NBME data: ${nbme_text}
-
-1) Identify weak vs strong systems.
-2) Give 1–2 priority focus areas for the next study cycle.
-3) Keep it concise, clinical and actionable.
-`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are MedStep Engine." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.6,
-      max_tokens: 300
-    });
-
-    const text =
-      completion?.choices?.[0]?.message?.content || "No response generated.";
-
     return res.status(200).json({
       email,
-      result: text,
+      result: `MedStep Engine test OK. Received: ${nbme_text}`,
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    console.error("Analyze-nbme error:", err);
+    console.error("Analyze-nbme minimal error:", err);
     return res.status(500).json({
       error: "Internal Server Error",
       message: err.message
