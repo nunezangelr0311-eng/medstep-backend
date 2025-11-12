@@ -1,240 +1,250 @@
 // api/analyze-nbme.js
-// Serverless Function (Vercel, Node 22) — CommonJS íntegro
-// Requiere: OPENAI_API_KEY en Vercel (Project → Settings → Environment Variables)
-// Opcional: ACTIONS_SECRET (si prefieres no hardcodear el token)
-
-// ---------- Imports ----------
 const OpenAI = require("openai");
 
-// ---------- Config ----------
-const ALLOWED_ORIGIN = "*"; // ajusta si quieres restringir CORS
-const DEFAULT_WEEKS = 4;
-const DEFAULT_HOURS_PER_DAY = 3;
-const STATIC_BEARER = "MedStep2025SecureToken"; // compatibilidad con tus pruebas
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-// ---------- Helpers ----------
-function sendJSON(res, code, payload) {
-  res.statusCode = code;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.end(JSON.stringify(payload));
+function readBearer(req) {
+  const h = req.headers["authorization"] || "";
+  const parts = h.split(" ");
+  return parts.length === 2 && /^Bearer$/i.test(parts[0]) ? parts[1] : "";
 }
 
-function parseBody(req) {
-  return new Promise((resolve) => {
-    if (req.body && typeof req.body === "object") return resolve(req.body);
-    let data = "";
-    req.on("data", (c) => (data += c));
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(data || "{}"));
-      } catch {
-        resolve({});
+function parseNBMEText(nbmeText = "") {
+  const map = {};
+  nbmeText
+    .split(",")
+    .map((s) => s.trim())
+    .forEach((pair) => {
+      const m = pair.match(/^(.+?)\s+(\d{2,3})$/);
+      if (m) {
+        const sys = m[1].trim();
+        const val = parseInt(m[2], 10);
+        map[sys] = val;
       }
     });
-  });
+  return map;
 }
 
-// Normaliza pares "Sistema 58" desde texto suelto
-function parseScores(nbmeText) {
-  const map = {
-    cardio: "Cardio",
-    cardiovascular: "Cardio",
-    endo: "Endocrine",
-    endocrine: "Endocrine",
-    endócrino: "Endocrine",
-    renal: "Renal",
-    gi: "Gastro",
-    gastro: "Gastro",
-    gastrointestinal: "Gastro",
-    "hema onco": "Hema-Onco",
-    hemaonco: "Hema-Onco",
-    "hema-onco": "Hema-Onco",
-    hema: "Hema-Onco",
-    onco: "Hema-Onco",
-    musculo: "Musculo",
-    músculo: "Musculo",
-    neuro: "Neuro",
-    psych: "Psych",
-    micro: "Micro",
-    microbiology: "Micro",
-    pharm: "Pharm",
-    pharmacology: "Pharm",
-  };
-
-  const norm = String(nbmeText || "")
-    .toLowerCase()
-    .replace(/[,;|]/g, ",")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const pairs = norm.split(",").map((x) => x.trim()).filter(Boolean);
-  const out = [];
-
-  for (const p of pairs) {
-    const m = p.match(/([a-záéíóú\- ]+)\s*[:=]?\s*(\d{2})/i);
-    if (!m) continue;
-    const raw = m[1].trim();
-    const score = Number(m[2]);
-    let key = raw;
-    Object.keys(map).forEach((k) => {
-      if (raw.includes(k)) key = map[k];
-    });
-    key = key.charAt(0).toUpperCase() + key.slice(1);
-    out.push({ system: key, score });
-  }
-  return out;
-}
-
-// ---------- Handler ----------
-module.exports = async (req, res) => {
-  // Preflight CORS
-  if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.statusCode = 204;
-    return res.end();
-  }
-
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
-    return sendJSON(res, 405, { error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
+    return;
   }
 
   try {
-    // --- Auth (compatibilidad con tus pruebas) ---
-    const auth = req.headers["authorization"] || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-    const expected = process.env.ACTIONS_SECRET || STATIC_BEARER;
+    const token = readBearer(req);
+    const expected = process.env.ACTIONS_SECRET || "MedStep2025SecureToken";
     if (token !== expected) {
-      return sendJSON(res, 401, { error: "Unauthorized" });
+      res.status(401).json({ error: "Unauthorized" });
+      return;
     }
 
-    // --- Body ---
-    const body = await parseBody(req);
-    const email = body.email || "student@example.com";
-    const nbme_text = body.nbme_text || body.nbme || "";
-    const weeks = Number(body.weeks || DEFAULT_WEEKS);
-    const hours_per_day = Number(body.hours_per_day || DEFAULT_HOURS_PER_DAY);
+    const body = req.body || {};
+    const {
+      email = "student@example.com",
+      nbme_text = "",
+      weeks = 4,
+      hours_per_day = 3,
+      return_format = "markdown",
+      timezone = "America/Puerto_Rico",
 
-    const scores = parseScores(nbme_text);
-    if (!scores.length) {
-      return sendJSON(res, 400, {
-        error: "Bad request",
-        detail: "No valid scores found in nbme_text.",
-      });
-    }
+      // NUEVOS (opcionales)
+      fatigue_level = "medium",         // "low" | "medium" | "high"
+      max_focus_minutes,                // si no se envía, lo calculamos por fatiga
+      rest_days_per_week = 1,           // 0..2
+      use_pomodoro = true               // descansos automáticos
+    } = body;
 
-    const sorted = [...scores].sort((a, b) => a.score - b.score);
-    const weak = sorted.slice(0, Math.min(3, sorted.length));
-    const strong = sorted.slice(-3).reverse();
+    const scores = parseNBMEText(nbme_text);
 
-    // --- Prompting robusto para plan detallado ---
-    const system = `
-You are "MedStep Engine – Step 1 Planner", an exacting but supportive attending.
-Your job is to produce a COMPLETE, EXECUTABLE plan that a Step 1 candidate can follow without ad-hoc decisions.
-Use evidence-based sequencing: weak systems first, spacing, interleaving, and daily mixed review.
-Always include weekly goals, daily timeboxed blocks (start–end), specific reading, ANKI target, QBank target, and checkpoints with objective criteria.
-Tone: concise, clinical, constructive. No fluff.`;
+    // Derivar defaults por fatiga si no te pasan max_focus_minutes
+    const focusMap = { low: 50, medium: 40, high: 25 };
+    const computedMaxFocus =
+      typeof max_focus_minutes === "number" && max_focus_minutes > 10
+        ? max_focus_minutes
+        : focusMap[(String(fatigue_level) || "medium").toLowerCase()] || 40;
 
-    // Esquema esperado (referencia para el modelo, usamos response_format=json_object)
-    const user = `
-NBME raw: ${nbme_text}
+    const systemPrompt = `
+You are MedStep Engine — Step 1 coach. Act as a demanding but compassionate attending.
+Turn NBME scores into an operational day-by-day plan with **fatigue-aware scheduling**.
 
-Detected (asc): ${sorted.map((s) => `${s.system} ${s.score}`).join(", ")}
-Weak (≤3): ${weak.map((w) => w.system).join(", ")}
-Strong (top 3): ${strong.map((s) => s.system).join(", ")}
+Global rules (non-negotiable):
+- Prioritize weak systems first; retain at least a minimal thread for strong systems.
+- Every day must include: study blocks + UWorld + review + flashcards.
+- Respect fatigue controls:
+  • Max focus minutes per block = ${computedMaxFocus}
+  • Insert short breaks (5–10 min) between blocks; if use_pomodoro=true, follow 25/5 or 40/10 cycles.
+  • Schedule ${rest_days_per_week} recovery/light day(s) per week (lower intensity, no heavy new content).
+  • Cap daily active hours at ~${hours_per_day} (±15 min), never exceed by >30 min.
+- Include weekly checkpoint with **fatigue reflection** (sleep, headaches, focus quality) and
+  automatic rebalancing (reduce block length, increase breaks, or add light day) if fatigue worsens.
+- Safe resources only (e.g., First Aid, UWorld, Anki/Sketchy).
+- If structured JSON is requested, return ONLY valid JSON (no prose).
+`;
 
-Constraints & preferences:
-- Weeks until exam: ${weeks}
-- Hours per day available: ${hours_per_day}
-- DAILY PLAN MUST be timeboxed (start–end) and include: reading, ANKI target, QBank target.
-- Interleave weak systems in first 2–3 weeks; maintain strong systems via short refresh blocks.
-- Include weekly checkpoints with explicit pass criteria (e.g., ≥60% in weak systems on mixed QBank).
-
-Return STRICT JSON with the following shape (plus a readable Markdown copy in "markdown"):
-
-{
-  "meta": {
-    "weeks": number,
-    "hours_per_day": number,
-    "weak_systems": string[],
-    "strong_systems": string[]
-  },
-  "weekly_plan": [
-    {
-      "week": number,
-      "theme": string,
-      "days": [
-        {
-          "day": "Mon|Tue|Wed|Thu|Fri|Sat|Sun",
-          "blocks": [
-            {"start":"08:00","end":"10:00","focus":"Endocrine — HPA axis pharm"},
-            {"start":"10:15","end":"12:00","focus":"QBank mixed (weak systems)"}
+    const jsonTemplate = {
+      plan_meta: {
+        weeks,
+        hours_per_day,
+        timezone,
+        fatigue_protocol: {
+          fatigue_level,
+          max_focus_minutes: computedMaxFocus,
+          rest_days_per_week,
+          use_pomodoro,
+          rules: [
+            "Insert 5–10 min breaks between blocks; longer 20 min break every 90 min.",
+            "If RPE ≥ 7/10 for 2 straight days, shorten blocks by 5–10 min and add 1 extra light block.",
+            "One recovery/light day per week defaults to spaced review + flashcards + gentle UWorld.",
           ],
-          "reading": "First Aid §§, Sketchy…, etc.",
-          "anki": "2K reviews / 200 new if applicable",
-          "qbank": {"questions": 40, "notes_focus": "Endocrine pharm mistakes"}
-        }
-      ]
-    }
-  ],
-  "practice_targets": {
-    "daily_qbank": number,
-    "weekly_full_block": number,
-    "mixed_review": string
-  },
-  "checkpoints": [
-    {"when":"End of Week 2 (Sun 20:00)","what":"NBME/SA + weak-systems custom block","criteria_to_pass":"≥60% weak systems, note 3 key error patterns"}
-  ],
-  "markdown": "…full human-readable plan…"
-}`;
-
-    // --- OpenAI call (sin temperature; aumentamos tokens) ---
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5", // usa el que ya configuraste
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
+        },
+      },
+      summary: {
+        weak_systems: [],
+        moderate_systems: [],
+        strong_systems: [],
+        rationale: "",
+      },
+      weeks: [
+        // {
+        //   week: 1,
+        //   total_hours: 0,
+        //   days: [
+        //     {
+        //       day: "Mon",
+        //       target_hours: hours_per_day,
+        //       notes: "Light day if high fatigue",
+        //       blocks: [
+        //         { type: "study", minutes: 40, topic: "Endocrine — thyroid", activity: "Study + notes", resources: ["First Aid Endocrine"] },
+        //         { type: "review", minutes: 20, topic: "Yesterday wrongs", activity: "Error log", resources: [] },
+        //       ],
+        //       uworld: { qbank: "UWorld", mode: "Tutor", questions: 40, review_minutes: 30 },
+        //       flashcards: { minutes: 20, deck: "Anki Endo Core" },
+        //       breaks: { short_breaks: 3, long_breaks: 1, schema: "Pomodoro 40/10" }
+        //     },
+        //     {
+        //       day: "Sun",
+        //       target_hours: 2,
+        //       blocks: [{ type: "recovery", minutes: 60, activity: "Spaced review + light cardio walk" }],
+        //       uworld: { questions: 20, review_minutes: 20 },
+        //       flashcards: { minutes: 15 }
+        //     }
+        //   ]
+        // }
       ],
-      // NO usar temperature para evitar el error del modelo.
-      max_tokens: 2500,
-      response_format: { type: "json_object" },
+      checkpoints: [
+        // { when: "end_of_week_1", tasks: ["NBME mini 50q", "Fatigue RPE survey", "Adjust block length if RPE>=7"] }
+      ],
+      pearls: [],
+    };
+
+    const useJSON = String(return_format).toLowerCase() === "structured_plan_v2";
+
+    const userPromptStructured = `
+NBME raw text: ${nbme_text}
+
+Parsed scores: ${JSON.stringify(scores)}
+
+Student constraints:
+- weeks: ${weeks}
+- hours_per_day: ${hours_per_day}
+- timezone: ${timezone}
+
+Fatigue controls:
+- fatigue_level: ${fatigue_level}
+- max_focus_minutes: ${computedMaxFocus}
+- rest_days_per_week: ${rest_days_per_week}
+- use_pomodoro: ${use_pomodoro}
+
+Return STRICT JSON following this schema:
+${JSON.stringify(jsonTemplate, null, 2)}
+
+Extra constraints:
+- Distribute rest/recovery day(s) realistically (e.g., midweek or weekend).
+- For "breaks", provide counts and the schema used (e.g., "Pomodoro 25/5" or "90/20").
+- Ensure each day totals ≈ ${hours_per_day} hours (± 15 min).
+- Include “checkpoints” with fatigue reflection and explicit auto-adjust rules for next week.
+`;
+
+    const userPromptMarkdown = `
+NBME raw text: ${nbme_text}
+
+Student constraints:
+- weeks: ${weeks}
+- hours_per_day: ${hours_per_day}
+- timezone: ${timezone}
+
+Fatigue controls:
+- fatigue_level: ${fatigue_level}, max_focus_minutes: ${computedMaxFocus}, rest_days_per_week: ${rest_days_per_week}, use_pomodoro: ${use_pomodoro}
+
+Produce a concise but complete markdown plan including:
+- **Weak vs Strong** triage + rationale.
+- **Day-by-day** schedule with block durations capped at ${computedMaxFocus} min, breaks (Pomodoro/90-20), UWorld, review y flashcards.
+- **Recovery/light day(s)** cada semana.
+- **Weekly checkpoints** con fatiga (RPE) y reglas de autoajuste para la semana siguiente.
+Use clear headings and bullets.
+`;
+
+    const messages = [
+      { role: "system", content: systemPrompt.trim() },
+      { role: "user", content: (useJSON ? userPromptStructured : userPromptMarkdown).trim() },
+    ];
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-5",
+      messages,
+      ...(useJSON ? { response_format: { type: "json_object" } } : {}),
     });
 
-    // --- Parseo robusto ---
-    let plan;
-    const raw = completion?.choices?.[0]?.message?.content || "{}";
-    try {
-      plan = JSON.parse(raw);
-    } catch {
-      const i = raw.indexOf("{");
-      const j = raw.lastIndexOf("}");
-      plan = JSON.parse(raw.slice(i, j + 1));
+    const content = completion.choices?.[0]?.message?.content || "";
+
+    if (useJSON) {
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch (e) {
+        parsed = {
+          plan_meta: {
+            weeks,
+            hours_per_day,
+            timezone,
+            fatigue_protocol: {
+              fatigue_level,
+              max_focus_minutes: computedMaxFocus,
+              rest_days_per_week,
+              use_pomodoro,
+              rules: ["Model returned non-JSON; showing raw content."],
+            },
+          },
+          summary: { weak_systems: [], moderate_systems: [], strong_systems: [], rationale: "Fallback." },
+          weeks: [],
+          checkpoints: [],
+          pearls: [],
+          raw: content,
+        };
+      }
+
+      res.status(200).json({
+        email,
+        plan: parsed,
+        timestamp: new Date().toISOString(),
+      });
+      return;
     }
 
-    // Enriquecemos meta por si faltara
-    plan.meta = plan.meta || {};
-    plan.meta.weeks = weeks;
-    plan.meta.hours_per_day = hours_per_day;
-    plan.meta.weak_systems = weak.map((w) => w.system);
-    plan.meta.strong_systems = strong.map((s) => s.system);
-
-    return sendJSON(res, 200, {
+    res.status(200).json({
       email,
-      plan,
+      result: content,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
     console.error("analyze-nbme error:", err);
-    return sendJSON(res, 500, {
-      error: "INTERNAL",
-      detail: err?.message || "Unexpected error",
-    });
+    const msg =
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "INTERNAL";
+    res.status(500).json({ error: "INTERNAL", detail: msg });
   }
 };
