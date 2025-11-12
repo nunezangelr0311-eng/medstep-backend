@@ -1,18 +1,15 @@
-// /api/generate-plan.js
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {
-    const { email, nbme_text, weeks, hours_per_day, fatigue_level, resources } = req.body || {};
+    const { email, nbme_text, weeks, hours_per_day, fatigue_level, resources } = req.body;
 
-    // Validar datos mínimos
     if (!email || !nbme_text) {
       return res.status(400).json({ error: "Missing required fields: email or nbme_text" });
     }
 
-    // Simulación temporal (mock)
     const response = {
       plan_cycle: [
         {
@@ -46,8 +43,8 @@ module.exports = async (req, res) => {
     };
 
     return res.status(200).json(response);
-  } catch (error) {
-    console.error("Error generating plan:", error);
+  } catch (err) {
+    console.error("Error generating plan:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
