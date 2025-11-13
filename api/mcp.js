@@ -1,9 +1,8 @@
 // api/mcp.js
 
-module.exports = function (app) {
-  // DISCOVERY: ChatGPT hace GET para saber qué herramientas existen
-  app.get("/api/mcp", (req, res) => {
-    res.json({
+export default async function handler(req, res) {
+  if (req.method === "GET") {
+    return res.status(200).json({
       mcp: "MedStep Engine",
       tools: [
         {
@@ -19,7 +18,7 @@ module.exports = function (app) {
         },
         {
           name: "generate_plan",
-          description: "Generate adaptive plan",
+          description: "Generate a 30-day plan",
           parameters: {
             type: "object",
             properties: {
@@ -41,18 +40,14 @@ module.exports = function (app) {
         }
       ]
     });
-  });
+  }
 
-  // EXECUTION: ChatGPT hace POST aquí cuando ejecuta una tool
-  app.post("/api/mcp", async (req, res) => {
-    try {
-      res.json({
-        ok: true,
-        received: req.body
-      });
-    } catch (err) {
-      console.error("MCP error:", err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-};
+  if (req.method === "POST") {
+    return res.status(200).json({
+      ok: true,
+      received: req.body
+    });
+  }
+
+  res.status(405).json({ error: "Method not allowed" });
+}
