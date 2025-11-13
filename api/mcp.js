@@ -1,8 +1,9 @@
 // api/mcp.js
-
-export default async function handler(req, res) {
-  if (req.method === "GET") {
-    return res.status(200).json({
+module.exports = function (app) {
+  
+  // GET → ChatGPT descubre herramientas
+  app.get("/api/mcp", (req, res) => {
+    res.json({
       mcp: "MedStep Engine",
       tools: [
         {
@@ -40,14 +41,13 @@ export default async function handler(req, res) {
         }
       ]
     });
-  }
+  });
 
-  if (req.method === "POST") {
-    return res.status(200).json({
+  // POST → ejecutar herramientas
+  app.post("/api/mcp", async (req, res) => {
+    res.json({
       ok: true,
       received: req.body
     });
-  }
-
-  res.status(405).json({ error: "Method not allowed" });
-}
+  });
+};
