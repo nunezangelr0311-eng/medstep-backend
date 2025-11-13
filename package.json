@@ -7,8 +7,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "start": "node api/index.js",
-    "build": "echo \"no build step\""
+    "build": "echo \"no build\""
   },
   "dependencies": {
     "express": "^4.18.2",
