@@ -7,20 +7,20 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// 🔥 Rutas del backend
+// 🔥 Rutas principales del backend
 require("./analyze-nbme")(app);
 require("./generate-plan")(app);
 require("./save-state")(app);
 require("./get-progress")(app);
 require("./register-student")(app);
 
-// 🔥 MCP SERVER
+// 🔥 MCP SERVER (tu archivo actual)
 require("./mcp")(app);
 
-// Ruta raíz de salud
+// Ruta base de salud
 app.get("/api", (req, res) => {
   res.json({ status: "MedStep Engine Backend Running" });
 });
 
-// Export para Vercel
+// Exportar para Vercel
 module.exports = app;
