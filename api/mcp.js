@@ -1,6 +1,14 @@
-// api/mcp.js
+export default async function handler(req, res) {
+  // --- CORS FIX ---
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-export default function handler(req, res) {
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  // --- MCP SERVER JSON ---
   if (req.method === "GET") {
     return res.status(200).json({
       version: "1.0.0",
@@ -10,7 +18,7 @@ export default function handler(req, res) {
       tools: [
         {
           name: "analyze_nbme",
-          description: "Analyze NBME JSON input",
+          description: "Analyze NBME input JSON",
           inputSchema: {
             type: "object",
             properties: {
