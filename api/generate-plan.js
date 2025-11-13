@@ -1,47 +1,16 @@
-module.exports = async (req, res) => {
+export default function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed. Use POST." });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { email, nbme_text, weeks, hours_per_day, fatigue_level } = req.body;
-
-    if (!email || !nbme_text) {
-      return res.status(400).json({ error: "Missing email or NBME text" });
-    }
-
     return res.status(200).json({
-      plan_cycle: [
-        {
-          week: 1,
-          days: [
-            {
-              day: 1,
-              focus: "Endocrine + UWorld",
-              tasks: [
-                "25 UWorld endocrine timed",
-                "Review explanations",
-                "Anki endocrine cards"
-              ],
-              hours: 3
-            }
-          ]
-        }
-      ],
-      daily_checkpoint: [
-        { day: 1, reflection: "What endocrine topic confused you today?" }
-      ],
-      weekly_objectives: [
-        { week: 1, goal: "Stabilize weak systems" }
-      ],
-      updated_state: {
-        fatigue_level: fatigue_level || "Moderate",
-        weeks_to_exam: weeks || 4,
-        hours_per_day: hours_per_day || 3
-      }
+      ok: true,
+      message: "Generate plan stub working",
+      received: req.body
     });
   } catch (err) {
-    console.error("Error generating plan:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("generate-plan error:", err);
+    return res.status(500).json({ error: err.message });
   }
-};
+}
