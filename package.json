@@ -6,9 +6,6 @@
   "engines": {
     "node": "22.x"
   },
-  "scripts": {
-    "build": "echo \"no build\""
-  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
