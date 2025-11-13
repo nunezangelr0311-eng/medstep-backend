@@ -1,6 +1,6 @@
 // api/mcp.js
 module.exports = function (app) {
-  // ✅ GET: usado por ChatGPT para descubrir las tools disponibles
+  // GET → ChatGPT descubre tools
   app.get("/api/mcp", (req, res) => {
     res.json({
       mcp: "MedStep Engine",
@@ -42,10 +42,9 @@ module.exports = function (app) {
     });
   });
 
-  // ✅ POST: ChatGPT ejecuta una tool y te envía el payload
+  // POST → ChatGPT ejecuta tool
   app.post("/api/mcp", async (req, res) => {
     try {
-      // Por ahora solo eco para probar que funciona
       res.json({
         ok: true,
         received: req.body
