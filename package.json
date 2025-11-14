@@ -2,7 +2,7 @@
   "name": "medstep-backend",
   "version": "1.0.0",
   "private": true,
-  "main": "api/index.js",
+  "type": "commonjs",
   "engines": {
     "node": "22.x"
   },
