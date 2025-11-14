@@ -1,22 +1,25 @@
-// api/analyze-nbme.js  (CommonJS + Express)
-
+// api/analyze-nbme.js
 const supabase = require("./_supabaseAdmin");
 
 module.exports = function (app) {
   app.post("/api/analyze-nbme", async (req, res) => {
     try {
+      const body = req.body;
+
+      console.log("Incoming /analyze-nbme request:", body);
+
       const {
         student_id,
         system_scores,
         weeks_to_exam,
         hours_per_day,
         fatigue_level,
-      } = req.body || {};
+      } = body || {};
 
-      // Validaciones mínimas
+      // Validación mínima
       if (!student_id) {
         return res.status(400).json({
-          error: { code: "MISSING_STUDENT_ID", message: "Missing field: student_id" },
+          error: { code: "MISSING_STUDENT_ID", message: "student_id is required" },
         });
       }
 
@@ -24,18 +27,14 @@ module.exports = function (app) {
         return res.status(400).json({
           error: {
             code: "INVALID_SYSTEM_SCORES",
-            message: "system_scores must be an object, e.g. { Cardio: 52 }",
+            message: "system_scores must be an object: { Cardio: 52 }",
           },
         });
       }
 
-      // NBME input tal como llega
-      const nbme_input = system_scores;
-
-      // Plan simple: enfocar en los 2 sistemas más débiles
-      const entries = Object.entries(system_scores); // [ ["Cardio",52], ... ]
-      const sorted = entries.sort((a, b) => a[1] - b[1]);
-      const weakest = sorted.slice(0, 2).map(([name]) => name);
+      // Ordenar sistemas de más débil → fuerte
+      const sorted = Object.entries(system_scores).sort((a, b) => a[1] - b[1]);
+      const weakest = sorted.slice(0, 2).map(([k]) => k);
 
       const days =
         weeks_to_exam && Number(weeks_to_exam) > 0
@@ -51,13 +50,15 @@ module.exports = function (app) {
         },
       };
 
-      // Insertar intento en nbme_attempts
+      console.log("Final plan:", plan_output);
+
+      // Insert en Supabase
       const { data, error } = await supabase
         .from("nbme_attempts")
         .insert([
           {
             student_id,
-            nbme_input,
+            nbme_input: system_scores,
             plan_output,
             fatigue_level: fatigue_level ?? null,
           },
@@ -75,15 +76,13 @@ module.exports = function (app) {
         });
       }
 
-      // OK
       return res.status(200).json({
         ok: true,
         attempt_id: data.id,
-        nbme_input: data.nbme_input,
         plan_output: data.plan_output,
       });
     } catch (err) {
-      console.error("analyze-nbme handler error:", err);
+      console.error("analyze-nbme handler exception:", err);
       return res.status(500).json({
         error: {
           code: "HANDLER_FAILED",
