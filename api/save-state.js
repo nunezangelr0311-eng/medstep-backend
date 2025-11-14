@@ -1,44 +1,57 @@
-// api/save-state.js
-import supabase from "./_supabaseAdmin";
+const supabase = require("./_supabaseAdmin");
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+module.exports = function (app) {
+  app.post("/api/save-state", async (req, res) => {
+    try {
+      const { student_id, plan_state } = req.body || {};
 
-  try {
-    const { student_uuid, updated_state } = req.body || {};
+      if (!student_id) {
+        return res.status(400).json({
+          error: { code: "MISSING_STUDENT_ID", message: "Missing field: student_id" },
+        });
+      }
 
-    if (!student_uuid || !updated_state) {
-      return res
-        .status(400)
-        .json({ error: "student_uuid and updated_state are required" });
-    }
+      if (!plan_state || typeof plan_state !== "object") {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_PLAN_STATE",
+            message: "plan_state must be an object",
+          },
+        });
+      }
 
-    const { data, error } = await supabase
-      .from("progress_state")
-      .upsert(
-        {
-          student_uuid,
-          last_state: updated_state, // JSONB con progreso diario/semana
-          updated_at: new Date().toISOString(),
+      const { data, error } = await supabase
+        .from("progress_state")
+        .upsert(
+          {
+            student_id,
+            state: plan_state,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "student_id" }
+        )
+        .select()
+        .single();
+
+      if (error) {
+        console.error("supabase save-state insert error:", error);
+        return res.status(500).json({
+          error: { code: "SUPABASE_SAVE_FAILED", message: error.message },
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        updated: data,
+      });
+    } catch (err) {
+      console.error("save-state handler error", err);
+      return res.status(500).json({
+        error: {
+          code: "HANDLER_FAILED",
+          message: err.message,
         },
-        { onConflict: "student_uuid" }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      console.error("progress_state save-state error:", error);
-      return res.status(500).json({ error: "Failed to save state" });
+      });
     }
-
-    return res.status(200).json({
-      ok: true,
-      saved_state: data,
-    });
-  } catch (err) {
-    console.error("save-state error:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-}
+  });
+};
