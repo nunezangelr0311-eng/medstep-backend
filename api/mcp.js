@@ -1,8 +1,13 @@
-export default function handler(req, res) {
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
+// api/mcp.js
 
-  const manifest = {
+export default function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Manifiesto MCP que verá el Agent Builder
+  res.status(200).json({
+    "mcp:version": "1.0",              // 👈 clave para el Agent Builder
     version: "1.0.0",
     metadata: {
       name: "MedStep Engine MCP"
@@ -42,7 +47,5 @@ export default function handler(req, res) {
         }
       }
     ]
-  };
-
-  res.status(200).json(manifest);
+  });
 }
