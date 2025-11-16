@@ -1,4 +1,4 @@
-// api/_supabaseAdmin.js
+// /api/_supabaseAdmin.js
 
 const { createClient } = require("@supabase/supabase-js");
 
@@ -12,9 +12,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
-      autoRefreshToken: false,
       persistSession: false,
-    },
+      autoRefreshToken: false,
+    }
   }
 );
 
