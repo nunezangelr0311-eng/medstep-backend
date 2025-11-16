@@ -1,5 +1,5 @@
 // api/analyze-nbme.js
-const supabase = require("./_supabaseAdmin");
+const supabase = require("./_supabaseAdmin.js");
 
 module.exports = function (app) {
   app.post("/api/analyze-nbme", async (req, res) => {
