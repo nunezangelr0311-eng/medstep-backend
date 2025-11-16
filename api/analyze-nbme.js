@@ -1,24 +1,13 @@
 // api/analyze-nbme.js
-
-const express = require("express");
 const supabase = require("./_supabaseAdmin.js");
 
-const app = express();
-
-// Middleware para parsear JSON
-app.use(express.json());
-
-/**
- * IMPORTANTE:
- * En Vercel, este archivo corresponde a la ruta /api/analyze-nbme.
- * Dentro del handler, la raíz es "/".
- * Por eso usamos app.post("/") y NO "/api/analyze-nbme".
- */
-app.post("/", async (req, res) => {
+module.exports = async function handler(req, res) {
   try {
-    const body = req.body || {};
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method Not Allowed" });
+    }
 
-    console.log("Incoming /analyze-nbme request:", body);
+    const body = req.body || {};
 
     const {
       student_id,
@@ -31,10 +20,7 @@ app.post("/", async (req, res) => {
     // Validaciones mínimas
     if (!student_id) {
       return res.status(400).json({
-        error: {
-          code: "MISSING_STUDENT_ID",
-          message: "student_id is required",
-        },
+        error: { code: "MISSING_STUDENT_ID", message: "student_id is required" },
       });
     }
 
@@ -47,13 +33,10 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // Ordenar sistemas de más débil → fuerte
-    const sorted = Object.entries(system_scores).sort(
-      (a, b) => a[1] - b[1]
-    );
+    // Cálculo del plan
+    const sorted = Object.entries(system_scores).sort((a, b) => a[1] - b[1]);
     const weakest = sorted.slice(0, 2).map(([k]) => k);
 
-    // Cálculo de días
     const days =
       weeks_to_exam && Number(weeks_to_exam) > 0
         ? Number(weeks_to_exam) * 7
@@ -67,8 +50,6 @@ app.post("/", async (req, res) => {
         fatigue_level: fatigue_level ?? null,
       },
     };
-
-    console.log("Final plan:", plan_output);
 
     // Insert en Supabase
     const { data, error } = await supabase
@@ -85,7 +66,6 @@ app.post("/", async (req, res) => {
       .single();
 
     if (error) {
-      console.error("Supabase insert error:", error);
       return res.status(500).json({
         error: {
           code: "SUPABASE_INSERT_FAILED",
@@ -94,14 +74,12 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // Respuesta OK
     return res.status(200).json({
       ok: true,
       attempt_id: data.id,
       plan_output: data.plan_output,
     });
   } catch (err) {
-    console.error("analyze-nbme handler exception:", err);
     return res.status(500).json({
       error: {
         code: "HANDLER_FAILED",
@@ -109,7 +87,4 @@ app.post("/", async (req, res) => {
       },
     });
   }
-});
-
-// Exportar la app de Express como handler de Vercel
-module.exports = app;
+};
