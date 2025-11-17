@@ -1,96 +1,59 @@
-// /api/analyze-nbme.js
+const getSupabaseClient = require("./_supabaseAdmin");
 
-const getSupabaseClient = require("./_supabaseAdmin.js");
-
-module.exports = async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
-    // Solo POST
     if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method Not Allowed" });
+      return res.status(405).json({ error: "Method not allowed" });
     }
-
-    const body = req.body || {};
 
     const {
       student_id,
       system_scores,
       weeks_to_exam,
       hours_per_day,
-      fatigue_level,
-    } = body;
+      fatigue_level
+    } = req.body || {};
 
-    // Validaciones mínimas
-    if (!student_id) {
+    // Validación mínima
+    if (!student_id || !system_scores) {
       return res.status(400).json({
-        error: { code: "MISSING_STUDENT_ID", message: "student_id is required" },
+        error: "Missing required fields: student_id and system_scores"
       });
     }
 
-    if (!system_scores || typeof system_scores !== "object") {
-      return res.status(400).json({
-        error: {
-          code: "INVALID_SYSTEM_SCORES",
-          message: "system_scores must be an object: { Cardio: 52 }",
-        },
-      });
-    }
-
-    // Ordenar sistemas de más débil → fuerte
-    const sorted = Object.entries(system_scores).sort((a, b) => a[1] - b[1]);
-    const weakest = sorted.slice(0, 2).map(([k]) => k);
-
-    const days =
-      weeks_to_exam && Number(weeks_to_exam) > 0
-        ? Number(weeks_to_exam) * 7
-        : 30;
-
-    const plan_output = {
-      days,
-      focus: weakest,
-      meta: {
-        hours_per_day: hours_per_day ?? null,
-        fatigue_level: fatigue_level ?? null,
-      },
-    };
-
-    // Obtener cliente de Supabase (ya con import dinámico correcto)
+    // Obtener cliente Supabase funcionando
     const supabase = await getSupabaseClient();
 
+    // EJEMPLO de uso real (ajústalo si necesitas):
     const { data, error } = await supabase
-      .from("nbme_attempts")
+      .from("nbme_logs")
       .insert([
         {
           student_id,
-          nbme_input: system_scores,
-          plan_output,
-          fatigue_level: fatigue_level ?? null,
-        },
-      ])
-      .select()
-      .single();
+          system_scores,
+          weeks_to_exam,
+          hours_per_day,
+          fatigue_level,
+          timestamp: new Date().toISOString()
+        }
+      ]);
 
     if (error) {
       console.error("Supabase insert error:", error);
-      return res.status(500).json({
-        error: {
-          code: "SUPABASE_INSERT_FAILED",
-          message: error.message,
-        },
-      });
+      return res.status(500).json({ error: "Database insert failed" });
     }
 
+    // Respuesta de prueba (puedes cambiarla)
     return res.status(200).json({
-      ok: true,
-      attempt_id: data.id,
-      plan_output: data.plan_output,
+      success: true,
+      inserted_id: data?.[0]?.id || null
     });
+
   } catch (err) {
-    console.error("analyze-nbme handler exception:", err);
+    console.error("ANALYZE-NBME ERROR:", err);
     return res.status(500).json({
-      error: {
-        code: "HANDLER_FAILED",
-        message: err.message,
-      },
+      error: "HANDLER_FAILED",
+      message: err.message
     });
   }
 };
