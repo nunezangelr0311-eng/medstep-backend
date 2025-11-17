@@ -1,31 +1,15 @@
-// api/analyze-nbme.js
-const supabase = require("./_supabaseAdmin.js");
+// /api/analyze-nbme.js
+
+const getSupabaseClient = require("./_supabaseAdmin.js");
 
 module.exports = async function handler(req, res) {
   try {
-    // Validar método
+    // Solo POST
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    // Validar que las env de Supabase existan
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error("SUPABASE_ENV_MISSING", {
-        url: !!process.env.SUPABASE_URL,
-        key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      });
-
-      return res.status(500).json({
-        error: {
-          code: "SUPABASE_ENV_MISSING",
-          message: "Supabase URL or SERVICE_ROLE_KEY not available in runtime",
-        },
-      });
-    }
-
     const body = req.body || {};
-
-    console.log("Incoming /analyze-nbme body:", body);
 
     const {
       student_id,
@@ -51,7 +35,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Cálculo del plan
+    // Ordenar sistemas de más débil → fuerte
     const sorted = Object.entries(system_scores).sort((a, b) => a[1] - b[1]);
     const weakest = sorted.slice(0, 2).map(([k]) => k);
 
@@ -69,12 +53,8 @@ module.exports = async function handler(req, res) {
       },
     };
 
-    console.log("Will insert into nbme_attempts:", {
-      student_id,
-      system_scores,
-      plan_output,
-      fatigue_level,
-    });
+    // Obtener cliente de Supabase (ya con import dinámico correcto)
+    const supabase = await getSupabaseClient();
 
     const { data, error } = await supabase
       .from("nbme_attempts")
@@ -89,9 +69,8 @@ module.exports = async function handler(req, res) {
       .select()
       .single();
 
-    console.log("Insert result:", { data, error });
-
     if (error) {
+      console.error("Supabase insert error:", error);
       return res.status(500).json({
         error: {
           code: "SUPABASE_INSERT_FAILED",
