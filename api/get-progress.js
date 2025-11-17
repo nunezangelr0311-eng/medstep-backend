@@ -1,7 +1,7 @@
 // api/get-progress.js
-import supabase from "./_supabaseAdmin";
+const getSupabaseClient = require("./_supabaseAdmin");
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -13,9 +13,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "student_uuid is required" });
     }
 
+    // Cliente Supabase real y consistente
+    const supabase = await getSupabaseClient();
+
     const { data: state, error: stateError } = await supabase
       .from("progress_state")
-      .select("last_analysis,study_plan,last_state,updated_at")
+      .select("last_analysis, study_plan, last_state, updated_at")
       .eq("student_uuid", student_uuid)
       .maybeSingle();
 
@@ -26,7 +29,7 @@ export default async function handler(req, res) {
 
     const { data: attempts, error: attemptsError } = await supabase
       .from("nbme_attempts")
-      .select("exam_date,label,system_scores")
+      .select("exam_date, label, system_scores")
       .eq("student_uuid", student_uuid)
       .order("exam_date", { ascending: true });
 
@@ -44,4 +47,4 @@ export default async function handler(req, res) {
     console.error("get-progress error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
+};
