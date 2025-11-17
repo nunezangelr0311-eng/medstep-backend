@@ -4,7 +4,10 @@ const getSupabaseClient = require("./_supabaseAdmin.js");
 module.exports = async (req, res) => {
   try {
     const supabase = await getSupabaseClient();
-    const { student_id } = req.query;
+
+    // CORREGIDO: req.query NO EXISTE en serverless
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const student_id = url.searchParams.get("student_id");
 
     if (!student_id) {
       return res.status(400).json({
@@ -12,8 +15,10 @@ module.exports = async (req, res) => {
       });
     }
 
+    console.log("Fetching progress for:", student_id);
+
     const { data, error } = await supabase
-      .from("step1_states")   // ← CORREGIDO
+      .from("step1_states")
       .select("*")
       .eq("student_id", student_id)
       .single();
