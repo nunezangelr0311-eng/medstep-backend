@@ -3,11 +3,29 @@ const supabase = require("./_supabaseAdmin.js");
 
 module.exports = async function handler(req, res) {
   try {
+    // Validar método
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method Not Allowed" });
     }
 
+    // Validar que las env de Supabase existan
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error("SUPABASE_ENV_MISSING", {
+        url: !!process.env.SUPABASE_URL,
+        key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      });
+
+      return res.status(500).json({
+        error: {
+          code: "SUPABASE_ENV_MISSING",
+          message: "Supabase URL or SERVICE_ROLE_KEY not available in runtime",
+        },
+      });
+    }
+
     const body = req.body || {};
+
+    console.log("Incoming /analyze-nbme body:", body);
 
     const {
       student_id,
@@ -51,7 +69,13 @@ module.exports = async function handler(req, res) {
       },
     };
 
-    // Insert en Supabase
+    console.log("Will insert into nbme_attempts:", {
+      student_id,
+      system_scores,
+      plan_output,
+      fatigue_level,
+    });
+
     const { data, error } = await supabase
       .from("nbme_attempts")
       .insert([
@@ -64,6 +88,8 @@ module.exports = async function handler(req, res) {
       ])
       .select()
       .single();
+
+    console.log("Insert result:", { data, error });
 
     if (error) {
       return res.status(500).json({
@@ -80,6 +106,7 @@ module.exports = async function handler(req, res) {
       plan_output: data.plan_output,
     });
   } catch (err) {
+    console.error("analyze-nbme handler exception:", err);
     return res.status(500).json({
       error: {
         code: "HANDLER_FAILED",
