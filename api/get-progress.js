@@ -15,19 +15,21 @@ module.exports = async (req, res) => {
 
     console.log("Fetching progress for:", student_id);
 
-    // IMPORTANTE: usar maybeSingle() para no lanzar error
+    // CONSULTA CORREGIDA
     const { data, error } = await supabase
-      .from("step1_states") // <- CONFIRMA NOMBRE EXACTO DE LA TABLA
+      .from("progress_state") //  <<< ESTA ES TU TABLA REAL
       .select("*")
       .eq("student_id", student_id)
       .maybeSingle();
 
     if (error) {
       console.error("Supabase fetch error:", error);
-      return res.status(500).json({ error: "supabase_query_failed", detail: error.message });
+      return res.status(500).json({
+        error: "supabase_query_failed",
+        detail: error.message
+      });
     }
 
-    // Si no existe aún un estado:
     if (!data) {
       return res.status(200).json({
         student_id,
@@ -43,6 +45,9 @@ module.exports = async (req, res) => {
 
   } catch (err) {
     console.error("Handler exception:", err);
-    return res.status(500).json({ error: "handler_failed", detail: err.message });
+    return res.status(500).json({
+      error: "handler_failed",
+      detail: err.message
+    });
   }
 };
