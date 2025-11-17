@@ -1,22 +1,34 @@
 // /api/_supabaseAdmin.js
-const { createClient } = require("@supabase/supabase-js");
+// Versión para CommonJS usando import dinámico (ESM inside CJS)
 
-// Log simple para ver en Vercel si las env existen
-console.log("SUPABASE_URL present:", !!process.env.SUPABASE_URL);
-console.log(
-  "SUPABASE_SERVICE_ROLE_KEY present:",
-  !!process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+let supabaseClient = null;
 
-const supabase = createClient(
-  process.env.SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-  {
+async function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+
+  // Carga ESM de forma dinámica
+  const { createClient } = await import("@supabase/supabase-js");
+
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    console.error(
+      "Missing Supabase environment variables.",
+      "SUPABASE_URL:", !!url,
+      "SUPABASE_SERVICE_ROLE_KEY:", !!serviceKey
+    );
+    throw new Error("Missing Supabase environment variables.");
+  }
+
+  supabaseClient = createClient(url, serviceKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
-  }
-);
+  });
 
-module.exports = supabase;
+  return supabaseClient;
+}
+
+module.exports = getSupabaseClient;
